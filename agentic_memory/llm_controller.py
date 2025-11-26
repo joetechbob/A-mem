@@ -18,23 +18,53 @@ class OpenAIController(BaseLLMController):
             if api_key is None:
                 api_key = os.getenv('OPENAI_API_KEY')
             if api_key is None:
-                raise ValueError("OpenAI API key not found. Set OPENAI_API_KEY environment variable.")
-            self.client = OpenAI(api_key=api_key)
+                api_key = "dummy-key"  # Use dummy key for local proxies
+            
+            # Get base URL from environment if set (for local proxies)
+            base_url = os.getenv('OPENAI_API_BASE')
+            if base_url:
+                self.client = OpenAI(api_key=api_key, base_url=base_url)
+            else:
+                self.client = OpenAI(api_key=api_key)
         except ImportError:
             raise ImportError("OpenAI package not found. Install it with: pip install openai")
     
     def get_completion(self, prompt: str, response_format: dict, temperature: float = 0.7) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
+        print(f"[LLM DEBUG START] Model: {self.model}, calling API...")
+        
+        # Build request parameters
+        params = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": "You must respond with a JSON object."},
                 {"role": "user", "content": prompt}
             ],
-            response_format=response_format,
-            temperature=temperature,
-            max_tokens=1000
-        )
-        return response.choices[0].message.content
+            "max_completion_tokens": 4000  # Increased from 1000 to prevent truncation
+        }
+        
+        # gpt-5 models don't support response_format properly - returns empty string
+        # Only add response_format for non-gpt-5 models
+        if not self.model.startswith("gpt-5"):
+            params["response_format"] = response_format
+        
+        # Only add temperature if it's not default (some models like gpt-5 only support default)
+        # Note: gpt-5 only supports temperature=1 (default), so we omit it
+        
+        try:
+            response = self.client.chat.completions.create(**params)
+            content = response.choices[0].message.content
+        except Exception as e:
+            print(f"[LLM DEBUG ERROR] Exception during API call: {e}")
+            print(f"[LLM DEBUG ERROR] Exception type: {type(e)}")
+            raise
+        
+        # DEBUG: Log what we're returning
+        print(f"[LLM DEBUG] Model: {self.model}")
+        print(f"[LLM DEBUG] Response content: {repr(content)}")
+        print(f"[LLM DEBUG] Response length: {len(content) if content else 0}")
+        print(f"[LLM DEBUG] Response type: {type(content)}")
+        
+        return content
 
 class OllamaController(BaseLLMController):
     def __init__(self, model: str = "llama2"):
