@@ -66,65 +66,65 @@ class OpenAIController(BaseLLMController):
         
         return content
 
-class OllamaController(BaseLLMController):
-    def __init__(self, model: str = "llama2"):
-        from ollama import chat
-        self.model = model
-    
-    def _generate_empty_value(self, schema_type: str, schema_items: dict = None) -> Any:
-        if schema_type == "array":
-            return []
-        elif schema_type == "string":
-            return ""
-        elif schema_type == "object":
-            return {}
-        elif schema_type == "number":
-            return 0
-        elif schema_type == "boolean":
-            return False
-        return None
-
-    def _generate_empty_response(self, response_format: dict) -> dict:
-        if "json_schema" not in response_format:
-            return {}
-            
-        schema = response_format["json_schema"]["schema"]
-        result = {}
-        
-        if "properties" in schema:
-            for prop_name, prop_schema in schema["properties"].items():
-                result[prop_name] = self._generate_empty_value(prop_schema["type"], 
-                                                            prop_schema.get("items"))
-        
-        return result
-
-    def get_completion(self, prompt: str, response_format: dict, temperature: float = 0.7) -> str:
-        try:
-            response = completion(
-                model="ollama_chat/{}".format(self.model),
-                messages=[
-                    {"role": "system", "content": "You must respond with a JSON object."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format=response_format,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            empty_response = self._generate_empty_response(response_format)
-            return json.dumps(empty_response)
+# REMOVED: OllamaController (requires litellm dependency we don't use)
+# class OllamaController(BaseLLMController):
+#     def __init__(self, model: str = "llama2"):
+#         from ollama import chat
+#         self.model = model
+#     
+#     def _generate_empty_value(self, schema_type: str, schema_items: dict = None) -> Any:
+#         if schema_type == "array":
+#             return []
+#         elif schema_type == "string":
+#             return ""
+#         elif schema_type == "object":
+#             return {}
+#         elif schema_type == "number":
+#             return 0
+#         elif schema_type == "boolean":
+#             return False
+#         return None
+# 
+#     def _generate_empty_response(self, response_format: dict) -> dict:
+#         if "json_schema" not in response_format:
+#             return {}
+#             
+#         schema = response_format["json_schema"]["schema"]
+#         result = {}
+#         
+#         if "properties" in schema:
+#             for prop_name, prop_schema in schema["properties"].items():
+#                 result[prop_name] = self._generate_empty_value(prop_schema["type"], 
+#                                                             prop_schema.get("items"))
+#         
+#         return result
+# 
+#     def get_completion(self, prompt: str, response_format: dict, temperature: float = 0.7) -> str:
+#         try:
+#             response = completion(
+#                 model="ollama_chat/{}".format(self.model),
+#                 messages=[
+#                     {"role": "system", "content": "You must respond with a JSON object."},
+#                     {"role": "user", "content": prompt}
+#                 ],
+#                 response_format=response_format,
+#             )
+#             return response.choices[0].message.content
+#         except Exception as e:
+#             empty_response = self._generate_empty_response(response_format)
+#             return json.dumps(empty_response)
 
 class LLMController:
     """LLM-based controller for memory metadata generation"""
     def __init__(self, 
-                 backend: Literal["openai", "ollama"] = "openai",
+                 backend: Literal["openai"] = "openai",  # REMOVED: "ollama" option
                  model: str = "gpt-4", 
                  api_key: Optional[str] = None):
         if backend == "openai":
             self.llm = OpenAIController(model, api_key)
-        elif backend == "ollama":
-            self.llm = OllamaController(model)
+        # REMOVED: elif backend == "ollama" - no longer supported
         else:
-            raise ValueError("Backend must be one of: 'openai', 'ollama'")
+            raise ValueError("Backend must be 'openai' (ollama support removed)")
             
     def get_completion(self, prompt: str, response_format: dict = None, temperature: float = 0.7) -> str:
         return self.llm.get_completion(prompt, response_format, temperature)

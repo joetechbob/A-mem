@@ -44,14 +44,23 @@ class MemoryNote:
                  context: Optional[str] = None,
                  evolution_history: Optional[List] = None,
                  category: Optional[str] = None,
-                 tags: Optional[List[str]] = None):
+                 tags: Optional[List[str]] = None,
+                 entity_type: Optional[str] = None,
+                 entity_id: Optional[str] = None,
+                 static_links: Optional[Dict[str, List[str]]] = None,
+                 graph_nodes: Optional[List[str]] = None,
+                 graph_relationships: Optional[List[str]] = None,
+                 memory_role: Optional[str] = None,
+                 describes_entity_id: Optional[str] = None,
+                 employee_name: Optional[str] = None,
+                 employee_id: Optional[str] = None):
         """Initialize a new memory note with its associated metadata.
         
         Args:
             content (str): The main text content of the memory
             id (Optional[str]): Unique identifier for the memory. If None, a UUID will be generated
             keywords (Optional[List[str]]): Key terms extracted from the content
-            links (Optional[Dict]): References to related memories
+            links (Optional[Dict]): References to related memories (dynamic links from A-mem evolution)
             retrieval_count (Optional[int]): Number of times this memory has been accessed
             timestamp (Optional[str]): Creation time in format YYYYMMDDHHMM
             last_accessed (Optional[str]): Last access time in format YYYYMMDDHHMM
@@ -59,6 +68,13 @@ class MemoryNote:
             evolution_history (Optional[List]): Record of how the memory has evolved
             category (Optional[str]): Classification category
             tags (Optional[List[str]]): Additional classification tags
+            entity_type (Optional[str]): Type of entity this note describes (e.g., "Employee", "ExpenseReport")
+            entity_id (Optional[str]): Business ID of the entity (e.g., "EMP-00142", "C93FD504...")
+            static_links (Optional[Dict[str, List[str]]]): Schema-defined relationships using document IDs
+            graph_nodes (Optional[List[str]]): Graph nodes created from this note (for graph DB sync)
+            graph_relationships (Optional[List[str]]): Graph relationships created from this note
+            memory_role (Optional[str]): Role of this memory ("root_entity" or "attribute_fact")
+            describes_entity_id (Optional[str]): For attribute facts, the entity ID they describe
         """
         # Core content and ID
         self.content = content
@@ -66,10 +82,29 @@ class MemoryNote:
         
         # Semantic metadata
         self.keywords = keywords or []
-        self.links = links or []
+        self.links = links or []  # Dynamic links from A-mem evolution
         self.context = context or "General"
         self.category = category or "Uncategorized"
         self.tags = tags or []
+        
+        # Entity metadata (NEW)
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        
+        # Memory role metadata (NEW)
+        self.memory_role = memory_role  # "root_entity" or "attribute_fact"
+        self.describes_entity_id = describes_entity_id  # For attribute facts
+        
+        # Static structured links (NEW) - format: {'relationship_name': ['doc_id1', 'doc_id2']}
+        self.static_links = static_links or {}
+        
+        # Graph database references (NEW)
+        self.graph_nodes = graph_nodes or []
+        self.graph_relationships = graph_relationships or []
+        
+        # Employee context (NEW)
+        self.employee_name = employee_name
+        self.employee_id = employee_id
         
         # Temporal information
         current_time = datetime.now().strftime("%Y%m%d%H%M")
@@ -147,7 +182,16 @@ class AgenticMemorySystem:
                             context=metadata.get('context', 'General'),
                             evolution_history=safe_deserialize(metadata.get('evolution_history'), []),
                             category=metadata.get('category', 'Uncategorized'),
-                            tags=safe_deserialize(metadata.get('tags'), [])
+                            tags=safe_deserialize(metadata.get('tags'), []),
+                            entity_type=metadata.get('entity_type'),
+                            entity_id=metadata.get('entity_id'),
+                            static_links=safe_deserialize(metadata.get('static_links'), {}),
+                            graph_nodes=safe_deserialize(metadata.get('graph_nodes'), []),
+                            graph_relationships=safe_deserialize(metadata.get('graph_relationships'), []),
+                            memory_role=metadata.get('memory_role'),
+                            describes_entity_id=metadata.get('describes_entity_id'),
+                            employee_name=metadata.get('employee_name'),
+                            employee_id=metadata.get('employee_id')
                         )
                         self.memories[doc_id] = note
                 logger.info(f"Loaded {len(self.memories)} existing memories from ChromaDB")
@@ -299,7 +343,7 @@ Return your decision in JSON format with the following structure:
         evo_label, note = self.process_memory(note)
         self.memories[note.id] = note
         
-        # Add to ChromaDB with complete metadata
+        # Add to ChromaDB with complete metadata (including employee fields)
         metadata = {
             "id": note.id,
             "content": note.content,
@@ -311,7 +355,14 @@ Return your decision in JSON format with the following structure:
             "context": note.context,
             "evolution_history": note.evolution_history,
             "category": note.category,
-            "tags": note.tags
+            "tags": note.tags,
+            "entity_type": note.entity_type,
+            "entity_id": note.entity_id,
+            "static_links": note.static_links,
+            "graph_nodes": note.graph_nodes,
+            "graph_relationships": note.graph_relationships,
+            "employee_name": note.employee_name,
+            "employee_id": note.employee_id
         }
         self.retriever.add_document(note.content, metadata, note.id)
         
@@ -342,7 +393,7 @@ Return your decision in JSON format with the following structure:
             extend=False  # Create new collection
         )
         
-        # Re-add all memory documents with their complete metadata
+        # Re-add all memory documents with their complete metadata (including employee fields)
         for memory in self.memories.values():
             metadata = {
                 "id": memory.id,
@@ -355,7 +406,14 @@ Return your decision in JSON format with the following structure:
                 "context": memory.context,
                 "evolution_history": memory.evolution_history,
                 "category": memory.category,
-                "tags": memory.tags
+                "tags": memory.tags,
+                "entity_type": memory.entity_type,
+                "entity_id": memory.entity_id,
+                "static_links": memory.static_links,
+                "graph_nodes": memory.graph_nodes,
+                "graph_relationships": memory.graph_relationships,
+                "employee_name": memory.employee_name,
+                "employee_id": memory.employee_id
             }
             self.retriever.add_document(memory.content, metadata, memory.id)
     
@@ -448,7 +506,7 @@ Return your decision in JSON format with the following structure:
             if hasattr(note, key):
                 setattr(note, key, value)
                 
-        # Update in ChromaDB
+        # Update in ChromaDB (including employee fields)
         metadata = {
             "id": note.id,
             "content": note.content,
@@ -460,7 +518,14 @@ Return your decision in JSON format with the following structure:
             "context": note.context,
             "evolution_history": note.evolution_history,
             "category": note.category,
-            "tags": note.tags
+            "tags": note.tags,
+            "entity_type": note.entity_type,
+            "entity_id": note.entity_id,
+            "static_links": note.static_links,
+            "graph_nodes": note.graph_nodes,
+            "graph_relationships": note.graph_relationships,
+            "employee_name": note.employee_name,
+            "employee_id": note.employee_id
         }
         
         # Delete and re-add to update
@@ -615,7 +680,7 @@ Return your decision in JSON format with the following structure:
                 if i < len(results['metadatas'][0]):
                     metadata = results['metadatas'][0][i]
                     
-                    # Create result dictionary with all metadata fields (deserialize lists)
+                    # Create result dictionary with all metadata fields (deserialize lists + employee fields)
                     memory_dict = {
                         'id': doc_id,
                         'content': metadata.get('content', ''),
@@ -625,6 +690,8 @@ Return your decision in JSON format with the following structure:
                         'links': safe_deserialize(metadata.get('links'), []),
                         'timestamp': metadata.get('timestamp', ''),
                         'category': metadata.get('category', 'Uncategorized'),
+                        'employee_name': metadata.get('employee_name'),
+                        'employee_id': metadata.get('employee_id'),
                         'is_neighbor': False
                     }
                     
